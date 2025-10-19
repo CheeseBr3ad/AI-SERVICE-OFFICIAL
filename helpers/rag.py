@@ -182,7 +182,7 @@ def build_rag_prompt(query: str, context_results: List[SearchResult]) -> str:
 **Your Answer:**"""
 
     logger.info(f"✓ RAG prompt constructed with {len(context_results)} context pieces")
-    logger.info(f"Context results: {context_results}")
+    # logger.info(f"Context results: {context_results}")
 
     return prompt
 

@@ -23,6 +23,7 @@ from helpers.embedding import embedding_worker
 from fastapi.middleware.cors import CORSMiddleware
 from routers.embedding import router as embedding_router
 from routers.search import router as rag_router
+from routers.serve import router as serve_router
 
 
 @asynccontextmanager
@@ -90,7 +91,7 @@ origins = [
 ]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # or ["*"] to allow all origins (for testing)
+    allow_origins=["*"],  # or ["*"] to allow all origins (for testing)
     allow_credentials=True,
     allow_methods=["*"],  # allow all HTTP methods
     allow_headers=["*"],  # allow all headers
@@ -98,6 +99,7 @@ app.add_middleware(
 
 app.include_router(rag_router)
 app.include_router(embedding_router)
+app.include_router(serve_router)
 
 
 @app.get("/")
