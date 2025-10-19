@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from config.config import (
+    QDRANT_CHAT_MESSAGES_COLLECTION_NAME,
     QDRANT_DOCUMENT_COLLECTION_NAME,
     QDRANT_MEETING_TRANSCRIPTS_COLLECTION_NAME,
 )
@@ -44,10 +45,12 @@ async def rag_search(request: SearchRequest):
         step_start = datetime.now()
         doc_filter = build_qdrant_filter(request.filters, "documents")
         transcript_filter = build_qdrant_filter(request.filters, "transcripts")
+        chat_filter = build_qdrant_filter(request.filters, "chat")
         filter_time = (datetime.now() - step_start).total_seconds() * 1000
         logger.info(f"✓ Filters built in {filter_time:.2f}ms")
         logger.debug(f"Document filter: {doc_filter}")
         logger.debug(f"Transcript filter: {transcript_filter}")
+        logger.debug(f"Chat filter: {chat_filter}")
 
         # Step 3: Search both collections in parallel
         step_start = datetime.now()
@@ -67,8 +70,16 @@ async def rag_search(request: SearchRequest):
             "transcripts",
         )
 
-        doc_results, transcript_results = await asyncio.gather(
-            doc_task, transcript_task
+        chat_task = search_collection(
+            QDRANT_CHAT_MESSAGES_COLLECTION_NAME,
+            query_embedding,
+            chat_filter,
+            request.top_k,
+            "chat",
+        )
+
+        doc_results, transcript_results, chat_results = await asyncio.gather(
+            doc_task, transcript_task, chat_task
         )
         search_time = (datetime.now() - step_start).total_seconds() * 1000
         logger.info(f"✓ Parallel search completed in {search_time:.2f}ms")
@@ -76,10 +87,13 @@ async def rag_search(request: SearchRequest):
         logger.info(
             f"  - Transcripts found: {len(transcript_results)} (top_k={request.top_k})"
         )
+        logger.info(
+            f"  - Chat messages found: {len(chat_results)} (top_k={request.top_k})"
+        )
 
         # Step 4: Combine and sort results by score
         step_start = datetime.now()
-        all_results = doc_results + transcript_results
+        all_results = doc_results + transcript_results + chat_results
         all_results.sort(key=lambda x: x.score, reverse=True)
 
         # Take top results across both collections

@@ -58,6 +58,16 @@ def build_qdrant_filter(
                 )
             )
 
+    # chat collection specific filters
+    if collection_type == "chat":
+        if filters.block_id_min is not None or filters.block_id_max is not None:
+            conditions.append(
+                FieldCondition(
+                    key="block_id",
+                    range=Range(gte=filters.block_id_min, lte=filters.block_id_max),
+                )
+            )
+
     return Filter(must=conditions) if conditions else None
 
 
@@ -122,67 +132,48 @@ def build_rag_prompt(query: str, context_results: List[SearchResult]) -> str:
         r for r in context_results if "document" in r.collection.lower()
     ]
 
+    chat_results = [r for r in context_results if "chat" in r.collection.lower()]
+
     prompt = f"""You are Bridge AI, an intelligent assistant for Bridge - a real-time, multi-modal communication platform. Bridge enables communities to coordinate over audio/video/text with live transcription & translation, gesture cues, and a real-time RAG copilot. Every session becomes a searchable "Meeting Doc" with jump-to-audio timestamps and instant replay.
 
 **Your Role:**
 - Answer questions grounded in meeting transcripts and attached documents
-- Provide precise, contextual answers with timestamp references when available
+- Provide precise, contextual answers when available
 - Help users navigate and understand their meeting content
-- Synthesize information across multiple sources (conversations + documents)
+- Synthesize information across multiple sources (conversations + documents + chats)
 
 **User Query:** {query}
 
 **Available Context:**
 
 """
+    # Add chat context
+    if chat_results:
+        prompt += "**Chat Messages:**\n\n"
+        for result in chat_results:
+            prompt += f"{result.content}\n\n"
 
     # Add transcript context
     if transcript_results:
         prompt += "**Meeting Transcripts:**\n\n"
-        for idx, result in enumerate(transcript_results, 1):
-            timestamp = result.metadata.get("timestamp", "Unknown")
-            meeting_id = result.metadata.get("meeting_id", "Unknown")
-
-            # Convert timestamp to human-readable format if it's a Unix timestamp
-            readable_time = "Unknown"
-            if timestamp != "Unknown":
-                try:
-                    from datetime import datetime
-
-                    dt = datetime.fromtimestamp(int(timestamp))
-                    readable_time = dt.strftime("%B %d, %Y at %I:%M:%S %p")
-                except (ValueError, TypeError):
-                    readable_time = str(timestamp)
-
-            prompt += (
-                f"[Transcript {idx}] (Meeting: {meeting_id}, Time: {readable_time})\n"
-            )
+        for result in transcript_results:
             prompt += f"{result.content}\n\n"
 
     # Add document context
     if document_results:
         prompt += "**Attached Documents:**\n\n"
-        for idx, result in enumerate(document_results, 1):
-            file_name = result.metadata.get("file_name", "Unknown document")
-            meeting_id = result.metadata.get("meeting_id", "Unknown")
-            prompt += f"[Document {idx}] (File: {file_name}, Meeting: {meeting_id})\n"
+        for result in document_results:
             prompt += f"{result.content}\n\n"
 
     prompt += """**Instructions:**
 1. Answer the query directly and concisely based on the provided context
-2. When referencing meeting transcripts, ALWAYS cite using this exact format: (Meeting: {meeting_id}, Time: {timestamp})
-   - Example: "According to the discussion (Meeting: mtg_12345, Time: January 15, 2025 at 02:30:45 PM)..."
-3. When referencing documents, ALWAYS cite using this exact format: (File: {file_name}, Meeting: {meeting_id})
-   - Example: "As stated in the document (File: Q4_Report.pdf, Meeting: mtg_12345)..."
-4. If information is found in multiple sources, synthesize them coherently and cite each source
-5. If the context doesn't contain enough information to answer fully, say so clearly
-6. Use a professional but conversational tone appropriate for a team collaboration tool
-7. When relevant, suggest how users can explore related content (e.g., "jump to the timestamp in the meeting recording")
+2. Synthesize information from multiple sources coherently
+3. If the context doesn't contain enough information to answer fully, say so clearly
+4. Use a professional but conversational tone appropriate for a team collaboration tool
 
 **Your Answer:**"""
 
     logger.info(f"✓ RAG prompt constructed with {len(context_results)} context pieces")
-    # logger.info(f"Context results: {context_results}")
 
     return prompt
 
